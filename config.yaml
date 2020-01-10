@@ -1,7 +1,21 @@
+{
+  "apiVersion": "v1",
+  "kind": "Namespace",
+  "metadata": {
+    "name": "devops-assignment",
+    "labels": {
+      "name": "devops-assignment"
+    }
+  }
+}
+
+---
+
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: app
+  namespace: devops-assignment
   labels:
     app: flask-uploader
 spec:
@@ -16,6 +30,6 @@ spec:
     spec:
       containers:
       - name: uploader
-        image: cytram/flask-app-assignment
+        image: kentvilhelmsen/flask-app
         ports:
         - containerPort: 5000
