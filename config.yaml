@@ -3,6 +3,11 @@ kind: Namespace
 metadata:
   name: devops-assignment
 ---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: monitoring
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -25,3 +30,192 @@ spec:
         image: kentvilhelmsen/flask-app
         ports:
         - containerPort: 5000
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: flask-uploader
+  name: app
+  namespace: devops-assignment
+spec:
+  ports:
+  - nodePort: 32518
+    port: 5000
+    protocol: TCP
+    targetPort: 5000
+  selector:
+    app: flask-uploader
+  type: NodePort
+---
+apiVersion: v1
+data:
+  config.yaml: |
+    static_resources:
+      listeners:
+      - name: http
+        address:
+          socket_address:
+            address: 0.0.0.0
+            port_value: 80
+        filter_chains:
+        - filters:
+          - name: envoy.http_connection_manager
+            config:
+              access_log:
+              - name: envoy.file_access_log
+                config:
+                  path: "/dev/stdout"
+              codec_type: auto
+              stat_prefix: ingress_http
+              use_remote_address: true
+              http_protocol_options:
+                accept_http_10: true
+              route_config:
+                name: local_route
+                virtual_hosts:
+                - name: "dummy"
+                  domains:
+                  - "*"
+                  routes:
+                  - match:
+                      prefix: "/flask/"
+                    route:
+                      prefix_rewrite: "/"
+                      cluster: flask-app
+                  - match:
+                      prefix: "/flask"
+                    route:
+                      prefix_rewrite: "/"
+                      cluster: flask-app
+              http_filters:
+              - name: envoy.router
+                config: {}
+
+      clusters:
+      - name: flask-app
+        http_protocol_options: {}
+        connect_timeout: 3s
+        type: strict_dns
+        dns_lookup_family: v4_only
+        lb_policy: least_request
+        hosts:
+        - socket_address:
+              address: app.devops-assignment.svc.cluster.local
+              port_value: 5000
+
+    admin:
+      access_log_path: "/dev/null"
+      address:
+        socket_address:
+          address: 0.0.0.0
+          port_value: 8001
+
+kind: ConfigMap
+metadata:
+  name: envoy-config
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: envoy-proxy
+  name: envoy-proxy
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: envoy-proxy
+  template:
+    metadata:
+      labels:
+        app: envoy-proxy
+      namespace: default
+    spec:
+      containers:
+      - args:
+        - -c
+        - /etc/envoy/config.yaml
+        - --service-cluster
+        - envoy-proxy
+        command:
+        - envoy
+        image: envoyproxy/envoy:v1.12.2
+        imagePullPolicy: Always
+        name: envoy
+        ports:
+        - containerPort: 80
+          protocol: TCP
+        - containerPort: 8001
+          protocol: TCP
+        volumeMounts:
+        - mountPath: /etc/envoy
+          name: envoy-config
+      restartPolicy: Always
+      volumes:
+      - configMap:
+          name: envoy-config
+        name: envoy-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: envoy-proxy
+  name: envoy-proxy
+  namespace: default
+spec:
+  ports:
+  - name: port-1
+    nodePort: 30846
+    port: 80
+    protocol: TCP
+    targetPort: 80
+  - name: port-2
+    nodePort: 30107
+    port: 8001
+    protocol: TCP
+    targetPort: 8001
+  selector:
+    app: envoy-proxy
+  type: NodePort
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: prometheus-operator-prometheus
+  name: prometheus-operator-prometheus
+  namespace: monitoring
+spec:
+  ports:
+  - nodePort: 32519
+    port: 9090
+    protocol: TCP
+    targetPort: 9090
+  selector:
+    app: prometheus
+    prometheus: prometheus-operator-prometheus
+  type: NodePort
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  labels:
+    app: prometheus-operator-prometheus
+    chart: prometheus-operator-8.5.6
+    heritage: Helm
+    release: prometheus-operator
+  name: envoy-proxy
+  namespace: monitoring
+spec:
+  endpoints:
+  - interval: 30s
+    path: /stats/prometheus
+    targetPort: 8001
+  namespaceSelector:
+    matchNames:
+    - default
+  selector:
+    matchLabels:
+      app: envoy-proxy
