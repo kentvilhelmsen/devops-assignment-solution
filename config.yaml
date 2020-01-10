@@ -1,0 +1,21 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: app
+  labels:
+    app: flask-uploader
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: flask-uploader
+  template:
+    metadata:
+      labels:
+        app: flask-uploader
+    spec:
+      containers:
+      - name: uploader
+        image: cytram/flask-app-assignment
+        ports:
+        - containerPort: 5000
