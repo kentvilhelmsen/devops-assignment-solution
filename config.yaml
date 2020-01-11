@@ -40,8 +40,11 @@ spec:
       containers:
       - name: uploader
         image: kentvilhelmsen/flask-app
+        env:
+        - name: PORT
+          value: "50000"
         ports:
-        - containerPort: 5000
+        - containerPort: 50000
         volumeMounts:
         - mountPath: /tmp
           name: flask-data
@@ -61,9 +64,9 @@ metadata:
 spec:
   ports:
   - nodePort: 32518
-    port: 5000
+    port: 50000
     protocol: TCP
-    targetPort: 5000
+    targetPort: 50000
   selector:
     app: flask-uploader
   type: NodePort
@@ -153,7 +156,7 @@ data:
         hosts:
         - socket_address:
               address: app.devops-assignment.svc.cluster.local
-              port_value: 5000
+              port_value: 50000
       - name: prometheus
         http_protocol_options: {}
         connect_timeout: 3s
