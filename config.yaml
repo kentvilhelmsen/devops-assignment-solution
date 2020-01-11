@@ -8,6 +8,18 @@ kind: Namespace
 metadata:
   name: monitoring
 ---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: flask-vol
+  namespace: devops-assignment
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 4Gi
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -30,6 +42,14 @@ spec:
         image: kentvilhelmsen/flask-app
         ports:
         - containerPort: 5000
+        volumeMounts:
+        - mountPath: /tmp
+          name: flask-data
+      restartPolicy: Always
+      volumes:
+      - name: flask-data
+        persistentVolumeClaim:
+          claimName: flask-vol
 ---
 apiVersion: v1
 kind: Service
@@ -48,13 +68,34 @@ spec:
     app: flask-uploader
   type: NodePort
 ---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  labels:
+    app: prometheus-operator-prometheus
+    chart: prometheus-operator-8.5.6
+    heritage: Helm
+    release: prometheus-operator
+  name: envoy-proxy
+  namespace: monitoring
+spec:
+  endpoints:
+  - interval: 30s
+    path: /stats/prometheus
+    targetPort: 8001
+  namespaceSelector:
+    matchNames:
+    - default
+  selector:
+    matchLabels:
+      app: envoy-proxy
+---
 apiVersion: v1
 data:
   config.yaml: |
     static_resources:
       listeners:
-      - name: http
-        address:
+      - address:
           socket_address:
             address: 0.0.0.0
             port_value: 80
@@ -74,20 +115,30 @@ data:
               route_config:
                 name: local_route
                 virtual_hosts:
-                - name: "dummy"
+                - name: "flask"
                   domains:
-                  - "*"
+                  - "flask:*"
                   routes:
                   - match:
-                      prefix: "/flask/"
+                      prefix: "/"
                     route:
-                      prefix_rewrite: "/"
                       cluster: flask-app
+                - name: "prometheus"
+                  domains:
+                  - "prometheus:*"
+                  routes:
                   - match:
-                      prefix: "/flask"
+                      prefix: "/"
                     route:
-                      prefix_rewrite: "/"
-                      cluster: flask-app
+                      cluster: prometheus
+                - name: "grafana"
+                  domains:
+                  - "grafana:*"
+                  routes:
+                  - match:
+                      prefix: "/"
+                    route:
+                      cluster: grafana
               http_filters:
               - name: envoy.router
                 config: {}
@@ -103,6 +154,26 @@ data:
         - socket_address:
               address: app.devops-assignment.svc.cluster.local
               port_value: 5000
+      - name: prometheus
+        http_protocol_options: {}
+        connect_timeout: 3s
+        type: strict_dns
+        dns_lookup_family: v4_only
+        lb_policy: least_request
+        hosts:
+        - socket_address:
+              address: prometheus-operator-prometheus.monitoring.svc.cluster.local
+              port_value: 9090
+      - name: grafana
+        http_protocol_options: {}
+        connect_timeout: 3s
+        type: strict_dns
+        dns_lookup_family: v4_only
+        lb_policy: least_request
+        hosts:
+        - socket_address:
+              address: prometheus-operator-grafana.monitoring.svc.cluster.local
+              port_value: 80
 
     admin:
       access_log_path: "/dev/null"
@@ -146,6 +217,8 @@ spec:
         ports:
         - containerPort: 80
           protocol: TCP
+        - containerPort: 443
+          protocol: TCP
         - containerPort: 8001
           protocol: TCP
         volumeMounts:
@@ -179,43 +252,3 @@ spec:
   selector:
     app: envoy-proxy
   type: NodePort
----
-apiVersion: v1
-kind: Service
-metadata:
-  labels:
-    app: prometheus-operator-prometheus
-  name: prometheus-operator-prometheus
-  namespace: monitoring
-spec:
-  ports:
-  - nodePort: 32519
-    port: 9090
-    protocol: TCP
-    targetPort: 9090
-  selector:
-    app: prometheus
-    prometheus: prometheus-operator-prometheus
-  type: NodePort
----
-apiVersion: monitoring.coreos.com/v1
-kind: ServiceMonitor
-metadata:
-  labels:
-    app: prometheus-operator-prometheus
-    chart: prometheus-operator-8.5.6
-    heritage: Helm
-    release: prometheus-operator
-  name: envoy-proxy
-  namespace: monitoring
-spec:
-  endpoints:
-  - interval: 30s
-    path: /stats/prometheus
-    targetPort: 8001
-  namespaceSelector:
-    matchNames:
-    - default
-  selector:
-    matchLabels:
-      app: envoy-proxy
