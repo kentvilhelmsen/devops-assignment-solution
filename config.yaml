@@ -93,6 +93,28 @@ spec:
     matchLabels:
       app: envoy-proxy
 ---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  labels:
+    app: prometheus-operator-prometheus
+    chart: prometheus-operator-8.5.6
+    heritage: Helm
+    release: prometheus-operator
+  name: flask-exporter
+  namespace: monitoring
+spec:
+  endpoints:
+  - interval: 30s
+    path: /
+    targetPort: 9405
+  namespaceSelector:
+    matchNames:
+    - devops-assignment
+  selector:
+    matchLabels:
+      app: flask-exporter
+---
 apiVersion: v1
 data:
   config.yaml: |
@@ -254,4 +276,52 @@ spec:
     targetPort: 8001
   selector:
     app: envoy-proxy
+  type: NodePort
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: flask-exporter
+  namespace: devops-assignment
+  labels:
+    app: flask-exporter
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: flask-exporter
+  template:
+    metadata:
+      labels:
+        app: flask-exporter
+    spec:
+      containers:
+      - name: exporter
+        image: kentvilhelmsen/flask-exporter
+        ports:
+        - containerPort: 9405
+        volumeMounts:
+        - mountPath: /tmp
+          name: flask-data
+      restartPolicy: Always
+      volumes:
+      - name: flask-data
+        persistentVolumeClaim:
+          claimName: flask-vol
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: flask-exporter
+  name: flask-exporter
+  namespace: devops-assignment
+spec:
+  ports:
+  - nodePort: 32568
+    port: 9405
+    protocol: TCP
+    targetPort: 9405
+  selector:
+    app: flask-exporter
   type: NodePort
