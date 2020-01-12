@@ -19,7 +19,7 @@ do
                 for inner in ${collector}
                 do
                         echo "Processing upload #${inner}"
-			curl --silent -F "file=@./test.docx;filename=test${inner}-${runID}.docx" http://flask:30846/ > /dev/null
+			curl -k --silent -F "file=@./test.docx;filename=test${inner}-${runID}.docx" https://flask:30846/ > /dev/null
                 done
 
                 echo "Resetting collector"
